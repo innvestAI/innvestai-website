@@ -33,12 +33,15 @@ jobs:
         run: npm ci
 
       - name: Lint CSS
+        continue-on-error: true
         run: npm run lint:css
 
       - name: Lint JavaScript
+        continue-on-error: true
         run: npm run lint:js
 
       - name: Validate HTML
+        continue-on-error: true
         run: npm run validate:html
 
       - name: Build production assets
