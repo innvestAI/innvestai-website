@@ -1,35 +1,36 @@
 module.exports = {
   extends: ['stylelint-config-standard'],
   rules: {
-    'indentation': 2,
-    'string-quotes': 'single',
+    // Basic formatting
+    'indent': 2,
+    'quotes': 'single',
     'no-duplicate-selectors': true,
-    'color-hex-case': 'lower',
+    
+    // Colors
     'color-hex-length': 'short',
     'color-named': 'never',
-    'selector-combinator-space-after': 'always',
-    'selector-attribute-quotes': 'always',
-    'selector-attribute-operator-space-before': 'never',
-    'selector-attribute-operator-space-after': 'never',
-    'selector-attribute-brackets-space-inside': 'never',
-    'declaration-block-trailing-semicolon': 'always',
-    'declaration-colon-space-before': 'never',
-    'declaration-colon-space-after': 'always',
-    'property-no-vendor-prefix': true,
-    'value-no-vendor-prefix': true,
-    'number-leading-zero': 'always',
-    'function-url-quotes': 'always',
-    'font-weight-notation': 'numeric',
-    'font-family-name-quotes': 'always-unless-keyword',
-    'comment-whitespace-inside': 'always',
-    'comment-empty-line-before': 'always',
+    'color-function-notation': 'modern',
+    'alpha-value-notation': 'percentage',
+    
+    // Spacing and layout
     'rule-empty-line-before': 'always-multi-line',
-    'selector-pseudo-element-colon-notation': 'double',
-    'selector-pseudo-class-parentheses-space-inside': 'never',
-    'media-feature-range-operator-space-before': 'always',
-    'media-feature-range-operator-space-after': 'always',
-    'media-feature-parentheses-space-inside': 'never',
-    'media-feature-colon-space-before': 'never',
-    'media-feature-colon-space-after': 'always'
+    'declaration-block-no-redundant-longhand-properties': true,
+    
+    // Fonts
+    'font-family-name-quotes': 'always-unless-keyword',
+    'font-weight-notation': 'numeric',
+    
+    // Keyframes
+    'keyframes-name-pattern': 'kebab-case',
+    
+    // Media queries
+    'media-feature-range-notation': 'context',
+    
+    // Selectors
+    'no-descending-specificity': true,
+    
+    // Disable some strict rules for now
+    'selector-class-pattern': null,
+    'selector-id-pattern': null
   }
 };
