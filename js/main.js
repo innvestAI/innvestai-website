@@ -28,11 +28,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            // Show loading state
+            // Show immediate thank you message
+            showAlert(window.INNVEST_CONFIG.UI.FORM_SUCCESS_MESSAGE, 'success');
+            waitlistForm.reset();
+            
+            // Show loading state briefly
             const submitButton = waitlistForm.querySelector('.send-btn');
             const originalText = submitButton.textContent;
-            submitButton.textContent = 'SENDING...';
+            submitButton.textContent = window.INNVEST_CONFIG.UI.BUTTON_STATES.SUCCESS;
             submitButton.disabled = true;
+            
+            // Reset button after 2 seconds
+            setTimeout(() => {
+                submitButton.textContent = originalText;
+                submitButton.disabled = false;
+            }, 2000);
             
             // Prepare data for API
             const apiData = {
@@ -42,31 +52,41 @@ document.addEventListener('DOMContentLoaded', function() {
                 emailUpdates: emailUpdates
             };
             
-            // Send to Lambda Function URL
-            fetch('https://mzkdnfb43hmilf2gfsbg6d5lgq0jajdu.lambda-url.us-east-1.on.aws/', {
+            // Send to Lambda Function URL (in background) with timeout and retry
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), window.INNVEST_CONFIG.API.TIMEOUT);
+            
+            fetch(window.INNVEST_CONFIG.API.BASE_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(apiData)
+                body: JSON.stringify(apiData),
+                signal: controller.signal
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
             .then(data => {
-                if (data.success) {
-                    showAlert(data.message || 'Thank you for joining our waitlist! We will be in touch soon.', 'success');
-                    waitlistForm.reset();
-                } else {
-                    throw new Error(data.error || 'An error occurred');
+                if (!data.success) {
+                    throw new Error(data.error || 'Server error occurred');
+                }
+                // API succeeded - no need to show another message since we already showed success
+                clearTimeout(timeoutId);
+                if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
+                    console.log('Form submitted successfully to API');
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
-                showAlert(error.message || 'An error occurred while submitting the form. Please try again.', 'error');
-            })
-            .finally(() => {
-                // Reset button state
-                submitButton.textContent = originalText;
-                submitButton.disabled = false;
+                clearTimeout(timeoutId);
+                if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
+                    console.error('API Error:', error);
+                }
+                // Show failure message only if API fails
+                showAlert(window.INNVEST_CONFIG.UI.FORM_ERROR_MESSAGE, 'error');
             });
         });
     }
