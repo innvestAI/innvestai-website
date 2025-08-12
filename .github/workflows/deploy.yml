@@ -1,13 +1,16 @@
 name: Deploy InnvestAI Website
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-  pull_request:
-    branches:
-      - main
+  # Manual trigger - you can run this from GitHub Actions tab
+  workflow_dispatch:
+  
+  # Automatic triggers (commented out for initial setup)
+  # push:
+  #   branches:
+  #     - main
+  # pull_request:
+  #   branches:
+  #     - main
 
 env:
   NODE_VERSION: '18'
@@ -49,48 +52,10 @@ jobs:
             css/styles.min.css
             js/main.min.js
 
-  deploy-staging:
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop'
-    environment: staging
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-assets
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Deploy to S3 Staging
-        run: |
-          aws s3 sync . s3://${{ vars.S3_BUCKET_STAGING }} \
-            --delete \
-            --exclude '*.md' \
-            --exclude 'node_modules/*' \
-            --exclude 'package*.json' \
-            --exclude '.github/*' \
-            --exclude '.git/*'
-
-      - name: Invalidate CloudFront Distribution
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_STAGING }} \
-            --paths "/*"
-
   deploy-production:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    # Runs on manual trigger only
     environment: production
     
     steps:
@@ -119,11 +84,8 @@ jobs:
             --exclude '.github/*' \
             --exclude '.git/*'
 
-      - name: Invalidate CloudFront Distribution
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_PRODUCTION }} \
-            --paths "/*"
+      # CloudFront invalidation removed for simplicity
+      # Add back later when CloudFront is set up
 
       - name: Run Lighthouse CI
         run: |
