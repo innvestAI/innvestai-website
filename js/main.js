@@ -127,12 +127,18 @@ function submitToAPI(formData) {
         })
         .then(response => {
             clearTimeout(timeoutId);
+            if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
+                console.log('Response status:', response.status, response.statusText);
+            }
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             return response.json();
         })
         .then(data => {
+            if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
+                console.log('Response data:', data);
+            }
             if (!data.success) {
                 throw new Error(data.error || 'Server returned error');
             }
