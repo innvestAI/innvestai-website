@@ -33,7 +33,8 @@ const CONFIG = {
     // UI Configuration
     UI: {
         FORM_SUCCESS_MESSAGE: 'Thank you for joining our waitlist! We will be in touch soon.',
-        FORM_ERROR_MESSAGE: 'Your information was saved locally, but there was an issue connecting to our servers. We will still contact you!',
+        FORM_ERROR_MESSAGE: 'There was a connection issue, but don\'t worry - your information has been saved and we\'ll still contact you!',
+        FORM_ROLLBACK_MESSAGE: 'We\'re having trouble connecting to our servers right now, but your information is preserved. Please try again in a moment.',
         BUTTON_STATES: {
             DEFAULT: 'SEND',
             LOADING: 'SENDING...',

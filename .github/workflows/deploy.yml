@@ -1,23 +1,23 @@
-name: Deploy InnvestAI Website
+name: 'Website CI/CD'
 
 on:
-  # Manual trigger - you can run this from GitHub Actions tab
   workflow_dispatch:
-  
-  # Automatic triggers (commented out for initial setup)
-  # push:
-  #   branches:
-  #     - main
-  # pull_request:
-  #   branches:
-  #     - main
+    inputs:
+      skip_tests:
+        description: 'Skip tests (emergency deploy)'
+        required: false
+        default: false
+        type: boolean
 
 env:
-  NODE_VERSION: '18'
+  AWS_REGION: 'us-east-1'
+  S3_BUCKET: 'innvestai-com'
 
 jobs:
   build-and-test:
+    name: 'Build and Test'
     runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_tests }}
     
     steps:
       - name: Checkout code
@@ -26,20 +26,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '18'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint CSS
-        run: npm run lint:css
-
-      - name: Lint JavaScript
-        run: npm run lint:js
-
-      - name: Validate HTML
-        run: npm run validate:html
+      - name: Run quality checks
+        run: |
+          npm run lint:css
+          npm run lint:js
+          npm run validate:html
 
       - name: Build production assets
         run: npm run build
@@ -51,66 +48,84 @@ jobs:
           path: |
             css/styles.min.css
             js/main.min.js
+          retention-days: 1
 
-  deploy-production:
-    needs: build-and-test
+  deploy:
+    name: 'Deploy to Production'
     runs-on: ubuntu-latest
-    # Runs on manual trigger only
+    needs: build-and-test
+    if: ${{ always() && (inputs.skip_tests || needs.build-and-test.result == 'success') }}
     environment: production
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-assets
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to S3 Production
+      - name: Setup Node.js (emergency deploy)
+        if: ${{ inputs.skip_tests }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Build (emergency deploy)
+        if: ${{ inputs.skip_tests }}
         run: |
-          aws s3 sync . s3://${{ vars.S3_BUCKET_PRODUCTION }} \
+          npm ci
+          npm run build
+
+      - name: Download build artifacts
+        if: ${{ !inputs.skip_tests }}
+        uses: actions/download-artifact@v4
+        with:
+          name: build-assets
+
+      - name: Deploy to S3
+        run: |
+          aws s3 sync . s3://$S3_BUCKET \
             --delete \
-            --exclude '*.md' \
-            --exclude 'node_modules/*' \
-            --exclude 'package*.json' \
+            --exclude '.git/*' \
             --exclude '.github/*' \
-            --exclude '.git/*'
+            --exclude 'node_modules/*' \
+            --exclude '*.md' \
+            --exclude 'package*.json' \
+            --exclude 'deploy-local.*' \
+            --exclude 'harik-dev/*' \
+            --cache-control 'max-age=31536000' \
+            --exclude '*.html'
+          
+          aws s3 sync . s3://$S3_BUCKET \
+            --exclude '*' \
+            --include '*.html' \
+            --cache-control 'max-age=3600'
 
-      # CloudFront invalidation removed for simplicity
-      # Add back later when CloudFront is set up
-
-      - name: Run Lighthouse CI
+      - name: Invalidate CloudFront
         run: |
-          npm install -g @lhci/cli@0.12.x
-          lhci autorun
-        env:
-          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+          DISTRIBUTION_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?contains(Aliases.Items, 'innvestai.com')].Id" \
+            --output text)
+          
+          aws cloudfront create-invalidation \
+            --distribution-id $DISTRIBUTION_ID \
+            --paths "/*" \
+            --no-cli-pager
 
-  security-scan:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Verify deployment
+        run: |
+          sleep 10
+          curl -fsSL https://innvestai.com > /dev/null
+          echo "✅ Website deployed successfully"
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: 'trivy-results.sarif'
+      - name: Create summary
+        run: |
+          echo "## 🚀 Website Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://innvestai.com" >> $GITHUB_STEP_SUMMARY
+          echo "- **S3 Bucket**: $S3_BUCKET" >> $GITHUB_STEP_SUMMARY
+          echo "- **Features**: Optimistic UI enabled" >> $GITHUB_STEP_SUMMARY

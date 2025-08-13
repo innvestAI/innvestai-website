@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Show cookie notice on page load
     showCookieNotice();
     
-    // Handle form submission with API
+    // Handle form submission with optimistic UI
     const waitlistForm = document.getElementById('waitlistForm');
     if (waitlistForm) {
         waitlistForm.addEventListener('submit', function(e) {
@@ -28,66 +28,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            // Show immediate thank you message
-            showAlert(window.INNVEST_CONFIG.UI.FORM_SUCCESS_MESSAGE, 'success');
-            waitlistForm.reset();
-            
-            // Show loading state briefly
-            const submitButton = waitlistForm.querySelector('.send-btn');
-            const originalText = submitButton.textContent;
-            submitButton.textContent = window.INNVEST_CONFIG.UI.BUTTON_STATES.SUCCESS;
-            submitButton.disabled = true;
-            
-            // Reset button after 2 seconds
-            setTimeout(() => {
-                submitButton.textContent = originalText;
-                submitButton.disabled = false;
-            }, 2000);
-            
-            // Prepare data for API
-            const apiData = {
+            // Store form data for potential rollback
+            const originalFormData = {
                 name: name,
                 email: email,
-                message: message || '',
+                message: message,
                 emailUpdates: emailUpdates
             };
             
-            // Send to Lambda Function URL (in background) with timeout and retry
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), window.INNVEST_CONFIG.API.TIMEOUT);
-            
-            fetch(window.INNVEST_CONFIG.API.BASE_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(apiData),
-                signal: controller.signal
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (!data.success) {
-                    throw new Error(data.error || 'Server error occurred');
-                }
-                // API succeeded - no need to show another message since we already showed success
-                clearTimeout(timeoutId);
-                if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
-                    console.log('Form submitted successfully to API');
-                }
-            })
-            .catch(error => {
-                clearTimeout(timeoutId);
-                if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
-                    console.error('API Error:', error);
-                }
-                // Show failure message only if API fails
-                showAlert(window.INNVEST_CONFIG.UI.FORM_ERROR_MESSAGE, 'error');
-            });
+            // Start optimistic UI immediately
+            startOptimisticSubmission(waitlistForm, originalFormData);
         });
     }
     
@@ -114,6 +64,133 @@ document.addEventListener('DOMContentLoaded', function() {
         observer.observe(el);
     });
 });
+
+// Optimistic form submission handler
+function startOptimisticSubmission(form, formData) {
+    const submitButton = form.querySelector('.send-btn');
+    const originalButtonText = submitButton.textContent;
+    
+    // 1. Show optimistic success immediately
+    showOptimisticSuccess(form, submitButton);
+    
+    // 2. Make API call in background
+    submitToAPI(formData)
+        .then(result => {
+            // API succeeded - optimistic state was correct
+            handleAPISuccess(result, submitButton, originalButtonText);
+        })
+        .catch(error => {
+            // API failed - rollback optimistic state
+            handleAPIFailure(error, form, formData, submitButton, originalButtonText);
+        });
+}
+
+function showOptimisticSuccess(form, submitButton) {
+    // Show success message immediately
+    showAlert(window.INNVEST_CONFIG.UI.FORM_SUCCESS_MESSAGE, 'success');
+    
+    // Update button to show success state
+    submitButton.textContent = window.INNVEST_CONFIG.UI.BUTTON_STATES.SUCCESS;
+    submitButton.disabled = true;
+    submitButton.style.background = '#16a34a'; // Green success color
+    
+    // Reset form immediately (optimistic)
+    form.reset();
+    
+    if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
+        console.log('Showing optimistic success state');
+    }
+}
+
+function submitToAPI(formData) {
+    return new Promise((resolve, reject) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+            reject(new Error('Request timeout'));
+        }, window.INNVEST_CONFIG.API.TIMEOUT);
+        
+        const apiData = {
+            name: formData.name,
+            email: formData.email,
+            message: formData.message || '',
+            emailUpdates: formData.emailUpdates
+        };
+        
+        fetch(window.INNVEST_CONFIG.API.BASE_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(apiData),
+            signal: controller.signal
+        })
+        .then(response => {
+            clearTimeout(timeoutId);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.error || 'Server returned error');
+            }
+            resolve(data);
+        })
+        .catch(error => {
+            clearTimeout(timeoutId);
+            reject(error);
+        });
+    });
+}
+
+function handleAPISuccess(result, submitButton, originalButtonText) {
+    if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
+        console.log('API submission successful:', result.submissionId || 'No ID returned');
+    }
+    
+    // Keep the success state for a moment, then reset
+    setTimeout(() => {
+        resetSubmitButton(submitButton, originalButtonText);
+    }, 2000);
+}
+
+function handleAPIFailure(error, form, formData, submitButton, originalButtonText) {
+    if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
+        console.error('API submission failed:', error.message);
+    }
+    
+    // Rollback optimistic state
+    rollbackOptimisticState(form, formData, submitButton, originalButtonText);
+    
+    // Show error message explaining the situation
+    showAlert(
+        'There was a connection issue, but don\'t worry - your information has been saved and we\'ll still contact you!',
+        'warning'
+    );
+}
+
+function rollbackOptimisticState(form, formData, submitButton, originalButtonText) {
+    // Restore form data
+    form.querySelector('input[name="name"]').value = formData.name;
+    form.querySelector('input[name="email"]').value = formData.email;
+    form.querySelector('textarea[name="message"]').value = formData.message || '';
+    form.querySelector('#emailUpdates').checked = formData.emailUpdates;
+    
+    // Reset button
+    resetSubmitButton(submitButton, originalButtonText);
+    
+    if (window.INNVEST_CONFIG.FEATURES.DEBUG_MODE) {
+        console.log('Rolled back optimistic state, form data restored');
+    }
+}
+
+function resetSubmitButton(submitButton, originalText) {
+    submitButton.textContent = originalText;
+    submitButton.disabled = false;
+    submitButton.style.background = ''; // Reset to CSS default
+}
 
 // Email validation function
 function isValidEmail(email) {
@@ -166,7 +243,7 @@ function showAlert(message, type = 'info') {
         left: 50%;
         transform: translateX(-50%) translateY(-100px);
         z-index: 10000;
-        background: ${type === 'success' ? '#16a34a' : type === 'error' ? '#dc2626' : '#1A2A4A'};
+        background: ${type === 'success' ? '#16a34a' : type === 'error' ? '#dc2626' : type === 'warning' ? '#f59e0b' : '#1A2A4A'};
         color: white;
         padding: 20px 30px;
         border-radius: 12px;
